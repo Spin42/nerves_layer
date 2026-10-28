@@ -22,7 +22,7 @@ jobs:
     outputs:
       include: ${{ steps.list.outputs.include }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: list
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,7 +47,7 @@ jobs:
         include: ${{ fromJSON(needs.missing.outputs.include) }}
     name: ${{ matrix.system }} ${{ matrix.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Buildroot's host dependencies
         run: |
           sudo apt-get update
