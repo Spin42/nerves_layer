@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+# A run builds every dev kit the release lacks, so concurrent runs would build
+# and upload the same ones.
+concurrency:
+  group: devkits
+
 jobs:
   missing:
     runs-on: ubuntu-24.04
