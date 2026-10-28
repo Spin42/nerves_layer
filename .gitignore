@@ -1,0 +1,6 @@
+/_build/
+/deps/
+/doc/
+/tmp/
+erl_crash.dump
+nerves_layer-*.tar

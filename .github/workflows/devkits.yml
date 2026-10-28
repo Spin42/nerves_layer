@@ -1,0 +1,56 @@
+name: Kernel dev kits
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - devkits.txt
+      - priv/scripts/**
+
+permissions:
+  contents: write
+
+jobs:
+  missing:
+    runs-on: ubuntu-24.04
+    outputs:
+      include: ${{ steps.list.outputs.include }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view devkits > /dev/null 2>&1 ||
+            gh release create devkits --title "Kernel dev kits" \
+              --notes "Kernel dev kits for nerves_layer, one per Nerves system release. Each was verified against the release's own kernel modules."
+          published=$(gh release view devkits --json assets --jq '.assets[].name')
+          include=$(grep -v '^#' devkits.txt | awk 'NF' | while read -r system version; do
+            grep -qx "$system-$version.tar.xz" <<< "$published" ||
+              jq -nc --arg system "$system" --arg version "$version" '{system: $system, version: $version}'
+          done | jq -sc .)
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: missing
+    if: needs.missing.outputs.include != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.missing.outputs.include) }}
+    name: ${{ matrix.system }} ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Buildroot's host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex cpio rsync unzip file wget \
+            python3 libssl-dev libelf-dev kmod squashfs-tools
+      - name: Build and verify the dev kit
+        run: priv/scripts/mkdevkit-release.sh "${{ matrix.system }}" "${{ matrix.version }}" "$RUNNER_TEMP/build" out
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload devkits out/*.tar.xz
