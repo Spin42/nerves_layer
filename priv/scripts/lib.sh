@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Helpers shared by the nerves_layer scripts. Source it; don't run it.
 
 die() {
