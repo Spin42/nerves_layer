@@ -55,6 +55,10 @@ DEVKIT_DIR="$WORK_DIR/linux-devkit"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 cd "$LINUX_DIR"
+if [[ ! -f scripts/package/install-extmod-build ]]; then
+    echo "$0: kernel $(cat include/config/kernel.release) has no scripts/package/install-extmod-build" >&2
+    exit 1
+fi
 srctree=. SRCARCH="$KERNEL_ARCH" CC=cc HOSTCC=cc MAKE=make \
     sh scripts/package/install-extmod-build "$DEVKIT_DIR"
 
