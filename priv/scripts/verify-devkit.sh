@@ -19,6 +19,9 @@ DEVKIT=$1
 SYSTEM_DIR=$2
 RELEASE=$(devkit_env "$DEVKIT" KERNEL_RELEASE)
 
+grep -qx CONFIG_MODVERSIONS=y "$DEVKIT/.config" ||
+    die "kernel $RELEASE is built without CONFIG_MODVERSIONS: its modules record no symbol CRCs to verify the dev kit against"
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
