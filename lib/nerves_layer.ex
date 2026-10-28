@@ -1,61 +1,140 @@
 defmodule NervesLayer do
   @moduledoc """
-  Layers add kernel modules, device-tree overlays and binaries to a stock
-  Nerves system without rebuilding it.
+  Layers add kernel modules, device-tree overlays and boot configuration to a
+  stock Nerves system without rebuilding it.
 
-  A layer is an ordinary Mix dependency whose `mix.exs` carries a
-  `:nerves_layer` keyword list:
+  A layer is an ordinary Mix dependency whose `mix.exs` adds the
+  `:nerves_layer` compiler and lists what the layer contributes, as
+  `NervesLayer.Layer` modules and their options:
 
       def project do
         [
-          app: :nerves_layer_hifiberry_dacplus,
+          app: :hello_led,
           compilers: Mix.compilers() ++ [:nerves_layer],
           nerves_layer: [
-            kernel_fragment: "linux.fragment",
-            dt_overlays: ["hifiberry-dacplus"],
-            config_txt: ["dtoverlay=hifiberry-dacplus"]
+            {NervesLayer.DeviceTree, overlays: ["hello-led"]},
+            {NervesLayer.RaspberryPi, dtoverlays: ["hello-led"]}
           ],
           ...
         ]
       end
 
+  The built-in layer modules are `NervesLayer.Kernel`,
+  `NervesLayer.DeviceTree` and `NervesLayer.RaspberryPi`. A layer can also
+  list its own modules, written with the same helpers:
+
+      defmodule MyLayer.Layer do
+        @behaviour NervesLayer.Layer
+
+        @impl NervesLayer.Layer
+        def layer(layer, _opts) do
+          layer
+          |> NervesLayer.Kernel.add_fragment("linux.fragment")
+          |> NervesLayer.RaspberryPi.enable_overlay("my-overlay")
+        end
+      end
+
   Everything happens while the firmware is built, by the scripts in
-  `priv/scripts`; this module and the two Mix tasks only connect them to Mix:
+  `priv/scripts`:
 
     * `mix compile` builds each layer's kernel modules and overlays
       (`Mix.Tasks.Compile.NervesLayer`)
     * `mix nerves_layer.install`, run before `mix firmware`, installs them
       into the firmware (`Mix.Tasks.NervesLayer.Install`)
 
-  ## Options
-
-    * `:kernel_fragment` - a kernel config fragment file enabling in-tree
-      modules (`CONFIG_..._=m`), built from the kernel's own sources. Only
-      options that add modules are accepted.
-    * `:kernel_modules_src` - a directory with out-of-tree module sources and
-      a `Kbuild` file building them.
-    * `:dt_overlays` - overlay names to put on the boot partition. Each is
-      looked up in the layer's `overlays/` directory as a source
-      (`<name>.dtso` or `<name>.dts`, compiled at build time), then as a
-      prebuilt `<name>.dtbo`, then in the system's
-      `images/rpi-firmware/overlays/`.
-    * `:config_txt` - lines appended to the Raspberry Pi `config.txt`.
-
   Paths are relative to the layer's root.
   """
 
-  @type layer :: %{app: atom(), path: Path.t(), config: keyword()}
+  @typedoc """
+  What a layer contributes. Layer modules build it with the helpers of
+  `NervesLayer.Kernel`, `NervesLayer.DeviceTree` and
+  `NervesLayer.RaspberryPi` rather than by changing its fields.
+
+    * `:app`, `:root` - the layer's application and directory
+    * `:target` - the `MIX_TARGET` the firmware is built for
+  """
+  @type t :: %__MODULE__{
+          app: atom(),
+          root: Path.t(),
+          target: atom(),
+          kernel_fragments: [Path.t()],
+          kernel_modules_srcs: [Path.t()],
+          dt_overlays: [String.t()],
+          config_txt: [String.t()]
+        }
+
+  defstruct app: nil,
+            root: nil,
+            target: nil,
+            kernel_fragments: [],
+            kernel_modules_srcs: [],
+            dt_overlays: [],
+            config_txt: []
 
   @doc """
   Returns the layers among the current project's dependencies.
   """
-  @spec layers() :: [layer()]
+  @spec layers() :: [t()]
   def layers() do
     for {app, path} <- Enum.sort(Mix.Project.deps_paths()),
-        config =
+        entries =
           Mix.Project.in_project(app, path, fn _ -> Mix.Project.config()[:nerves_layer] end),
-        config != nil,
-        do: %{app: app, path: path, config: config}
+        entries != nil,
+        do: new(app, path, entries)
+  end
+
+  @doc """
+  Runs a layer's `:nerves_layer` entries, `{module, opts}` or `module`, in
+  order.
+  """
+  @spec new(atom(), Path.t(), [module() | {module(), keyword()}]) :: t()
+  def new(app, root, entries) do
+    layer = %__MODULE__{app: app, root: root, target: Mix.target()}
+    Enum.reduce(List.wrap(entries), layer, &run_entry/2)
+  end
+
+  defp run_entry({module, opts}, layer) when is_atom(module) and is_list(opts) do
+    if not (Code.ensure_loaded?(module) and function_exported?(module, :layer, 2)) do
+      Mix.raise("#{layer.app}: #{inspect(module)} doesn't implement NervesLayer.Layer")
+    end
+
+    case module.layer(layer, opts) do
+      %__MODULE__{} = layer ->
+        layer
+
+      other ->
+        Mix.raise(
+          "#{layer.app}: #{inspect(module)}.layer/2 returned #{inspect(other)}, not a %NervesLayer{}"
+        )
+    end
+  end
+
+  defp run_entry(module, layer) when is_atom(module), do: run_entry({module, []}, layer)
+
+  defp run_entry(entry, layer) do
+    Mix.raise(
+      "#{layer.app}: invalid :nerves_layer entry #{inspect(entry)}, expected {module, opts}"
+    )
+  end
+
+  @doc """
+  Raises unless `opts` is a keyword list with only the given keys. For layer
+  modules validating their options.
+  """
+  @spec validate_opts!(keyword(), [atom()], module()) :: keyword()
+  def validate_opts!(opts, keys, module) do
+    if not Keyword.keyword?(opts) do
+      raise ArgumentError, "#{inspect(module)}: options must be a keyword list"
+    end
+
+    case Keyword.keys(opts) -- keys do
+      [] ->
+        opts
+
+      unknown ->
+        raise ArgumentError,
+              "#{inspect(module)}: unknown options #{inspect(unknown)}, expected #{inspect(keys)}"
+    end
   end
 
   @doc """

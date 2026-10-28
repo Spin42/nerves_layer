@@ -21,18 +21,15 @@ See [`../hello_layer`](../hello_layer) for a firmware that uses it.
 
 A layer is an ordinary Mix project. Three things make it one.
 
-**The `:nerves_layer` compiler and dependency**, in `mix.exs`:
+**The `:nerves_layer` compiler, dependency and entry**, in
+[`mix.exs`](mix.exs):
 
 ```elixir
 def project do
   [
     app: :nerves_layer_hifiberry_dacplus,
     compilers: Mix.compilers() ++ [:nerves_layer],
-    nerves_layer: [
-      kernel_fragment: "linux.fragment",
-      dt_overlays: ["hifiberry-dacplus"],
-      config_txt: ["dtoverlay=hifiberry-dacplus"]
-    ],
+    nerves_layer: [NervesLayer.HifiberryDacplus.Layer],
     deps: [{:nerves_layer, github: "spin42/nerves_layer"}, ...]
   ]
 end
@@ -40,6 +37,32 @@ end
 
 This example uses `path: "../.."` instead, so it builds against the
 `nerves_layer` next to it.
+
+**A layer module**,
+[`NervesLayer.HifiberryDacplus.Layer`](lib/nerves_layer/hifiberry_dacplus/layer.ex),
+which says what the layer adds with nerves_layer's helpers:
+
+```elixir
+def layer(layer, _opts) do
+  layer
+  |> NervesLayer.Kernel.add_fragment("linux.fragment")
+  |> NervesLayer.DeviceTree.add_overlay("hifiberry-dacplus")
+  |> NervesLayer.RaspberryPi.enable_overlay("hifiberry-dacplus")
+end
+```
+
+The same could be written in `mix.exs` with the built-in layer modules:
+
+```elixir
+nerves_layer: [
+  {NervesLayer.Kernel, fragment: "linux.fragment"},
+  {NervesLayer.DeviceTree, overlays: ["hifiberry-dacplus"]},
+  {NervesLayer.RaspberryPi, dtoverlays: ["hifiberry-dacplus"]}
+]
+```
+
+as the [`hello_led`](../hello_layer/layers/hello_led) layer does. A module
+of its own lets a layer compute what it adds, from options or the target.
 
 **The kernel config fragment**, [`linux.fragment`](linux.fragment): the
 `CONFIG_` options to build as modules, in the kernel's own syntax.
@@ -54,12 +77,9 @@ Only the options you want are needed; Kconfig resolves what they select
 fragment that would change the system's kernel rather than add modules to
 it.
 
-**The boot partition entries**: `dt_overlays` names the overlays to put in
-`overlays/` and `config_txt` the lines to add to `config.txt`. An overlay is
-looked up in the layer's `overlays/` directory as a source (`.dtso`/`.dts`)
-or a prebuilt `.dtbo`, then among the overlays the system ships. The
-[`hello_led`](../hello_layer/layers/hello_led) layer shows an overlay
-compiled from source.
+The `hifiberry-dacplus` overlay comes from the system: Raspberry Pi systems
+build all of the kernel's overlays but only put a few on the boot
+partition, so `DeviceTree.add_overlay/2` adds it there.
 
 Anything else in the layer is regular Elixir. Here,
 [`NervesLayer.HifiberryDacplus`](lib/nerves_layer/hifiberry_dacplus.ex)

@@ -4,10 +4,14 @@
 
 First release.
 
-* `:nerves_layer` compiler building a layer's kernel modules, from a kernel
-  config fragment or out-of-tree sources, and its device-tree overlays
-* `mix nerves_layer.install` installing modules, overlays and `config.txt`
-  lines into the firmware
+* Layers list `NervesLayer.Layer` modules in their `:nerves_layer` project
+  option. Built in: `NervesLayer.Kernel` (modules from kernel config
+  fragments or out-of-tree sources), `NervesLayer.DeviceTree` (overlays on
+  the boot partition, compiled from source or prebuilt) and
+  `NervesLayer.RaspberryPi` (`config.txt` lines). Layers can write their own
+  with the same helpers.
+* `:nerves_layer` compiler building each layer for the system's kernel, and
+  `mix nerves_layer.install` installing all layers into the firmware
 * Kernel dev kits: found in the system, generated from a local system
   build, or downloaded from this repository's `devkits` release, and
   verified against the system's kernel

@@ -32,8 +32,8 @@ dependency:
 
 ## Writing a layer
 
-A layer is a Mix project that adds the `:nerves_layer` compiler and a
-`:nerves_layer` keyword list:
+A layer is a Mix project that adds the `:nerves_layer` compiler and lists
+what it contributes as layer modules and their options:
 
 ```elixir
 def project do
@@ -42,31 +42,56 @@ def project do
     version: "0.1.0",
     compilers: Mix.compilers() ++ [:nerves_layer],
     nerves_layer: [
-      kernel_fragment: "linux.fragment",
-      dt_overlays: ["my-overlay"],
-      config_txt: ["dtoverlay=my-overlay"]
+      {NervesLayer.Kernel, fragment: "linux.fragment"},
+      {NervesLayer.DeviceTree, overlays: ["my-overlay"]},
+      {NervesLayer.RaspberryPi, dtoverlays: ["my-overlay"]}
     ],
     deps: [{:nerves_layer, github: "spin42/nerves_layer"}]
   ]
 end
 ```
 
-All options are optional, and paths are relative to the layer's root:
+The built-in layer modules, and their options (paths are relative to the
+layer's root):
 
-* `:kernel_fragment` - a kernel config fragment enabling in-tree modules
-  (`CONFIG_..._=m`), built from the kernel's own sources. Only changes that
-  add modules are accepted.
-* `:kernel_modules_src` - a directory with out-of-tree module sources and a
-  `Kbuild` file building them.
-* `:dt_overlays` - overlay names to put on the boot partition. Each is
-  looked up in the layer's `overlays/` directory as a source
-  (`<name>.dtso` or `<name>.dts`, compiled at build time), then as a
-  prebuilt `<name>.dtbo`, then among the system's
-  `images/rpi-firmware/overlays/`.
-* `:config_txt` - lines appended to the Raspberry Pi `config.txt`.
+| Module | Options | Adds |
+|---|---|---|
+| `NervesLayer.Kernel` | `fragment:`, `modules_src:` | Kernel modules: in-tree ones a config fragment enables (`CONFIG_..._=m`), built from the kernel's own sources, or out-of-tree ones from a directory with a `Kbuild` file |
+| `NervesLayer.DeviceTree` | `overlays:` | Overlays on the boot partition, compiled from `overlays/<name>.dtso` or `.dts`, prebuilt `overlays/<name>.dtbo`, or taken from the overlays the system builds |
+| `NervesLayer.RaspberryPi` | `dtoverlays:`, `config_txt:` | `config.txt` lines, such as `dtoverlay=<name>,<param>=<value>` |
 
-A layer can carry Elixir code and dependencies like any library, including
-[NBPR](https://github.com/jimsynz/nbpr) packages for userspace binaries.
+A fragment can only add modules: the build rejects options the system sets,
+options code compiled into the kernel depends on (`CONFIG_CAN` changes
+`struct net`), and built-in code.
+
+### Layer modules
+
+Each entry is a module implementing the `NervesLayer.Layer` behaviour. It
+receives a `%NervesLayer{}` and returns it with its additions, made with
+the same helpers the built-in modules use, so a layer can write its own:
+
+```elixir
+defmodule MyLayer.Layer do
+  @behaviour NervesLayer.Layer
+
+  @impl NervesLayer.Layer
+  def layer(layer, opts) do
+    layer
+    |> NervesLayer.Kernel.add_fragment("linux.fragment")
+    |> NervesLayer.DeviceTree.add_overlay("my-overlay")
+    |> NervesLayer.RaspberryPi.enable_overlay("my-overlay", speed: opts[:speed] || 100)
+  end
+end
+```
+
+and list it as `nerves_layer: [{MyLayer.Layer, speed: 400}]`. The
+`%NervesLayer{}` also carries the firmware's `:target`, for layers that
+depend on it. Layer modules only describe; nerves_layer builds and installs
+what all layers describe together.
+
+A layer can also carry Elixir code and dependencies like any library,
+including [NBPR](https://github.com/jimsynz/nbpr) packages for userspace
+binaries.
 
 ## Using layers in a firmware
 

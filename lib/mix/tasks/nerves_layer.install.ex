@@ -51,10 +51,10 @@ defmodule Mix.Tasks.NervesLayer.Install do
   defp install_boot_files(layers) do
     overlays =
       for layer <- layers,
-          name <- layer.config[:dt_overlays] || [],
+          name <- layer.dt_overlays,
           do: ["--overlay", "#{name}=#{find_overlay!(layer, name)}"]
 
-    lines = for layer <- layers, line <- layer.config[:config_txt] || [], do: ["--line", line]
+    lines = for layer <- layers, line <- layer.config_txt, do: ["--line", line]
 
     if overlays != [] or lines != [] do
       firmware = Application.get_env(:nerves, :firmware, [])
@@ -72,7 +72,7 @@ defmodule Mix.Tasks.NervesLayer.Install do
   defp find_overlay!(layer, name) do
     candidates = [
       Path.join([NervesLayer.build_dir(layer.app), "overlays", name <> ".dtbo"]),
-      Path.join([layer.path, "overlays", name <> ".dtbo"]),
+      Path.join([layer.root, "overlays", name <> ".dtbo"]),
       Path.join([System.fetch_env!("NERVES_SYSTEM"), "images/rpi-firmware/overlays/#{name}.dtbo"])
     ]
 

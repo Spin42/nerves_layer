@@ -16,45 +16,58 @@ defmodule Mix.Tasks.Compile.NervesLayer do
   @impl Mix.Task.Compiler
   def run(_args) do
     config = Mix.Project.config()
-    layer = config[:nerves_layer] || []
-    root = File.cwd!()
-    overlays = overlay_sources(root, layer)
 
-    if Mix.target() == :host or
-         (layer[:kernel_fragment] == nil and layer[:kernel_modules_src] == nil and overlays == []) do
+    if Mix.target() == :host or config[:nerves_layer] == nil do
       {:noop, []}
     else
-      build(config[:app], root, layer, overlays)
+      layer = NervesLayer.new(config[:app], File.cwd!(), config[:nerves_layer])
+      overlays = overlay_sources(layer)
+
+      if layer.kernel_fragments == [] and layer.kernel_modules_srcs == [] and overlays == [] do
+        {:noop, []}
+      else
+        build(layer, overlays)
+      end
     end
   end
 
-  defp build(app, root, layer, overlays) do
+  defp build(layer, overlays) do
     devkit = NervesLayer.devkit!()
-    out = NervesLayer.build_dir(app)
+    out = NervesLayer.build_dir(layer.app)
     stamp_path = Path.join(out, "build.stamp")
-    stamp = stamp(root, layer, overlays, devkit)
+    stamp = stamp(layer, overlays, devkit)
 
     if File.read(stamp_path) == {:ok, stamp} do
       {:noop, []}
     else
-      Mix.shell().info("==> #{app}: building for the system's kernel")
+      Mix.shell().info("==> #{layer.app}: building for the system's kernel")
       modules = Path.join(out, "modules")
       File.rm_rf!(modules)
       File.rm_rf!(Path.join(out, "overlays"))
 
-      if fragment = layer[:kernel_fragment] do
+      if layer.kernel_fragments != [] do
+        fragment = Path.join(out, "linux.fragment")
+        File.mkdir_p!(out)
+
+        File.write!(
+          fragment,
+          Enum.map_join(layer.kernel_fragments, "\n", &File.read!(Path.join(layer.root, &1)))
+        )
+
         NervesLayer.script!("build-fragment.sh", [
           devkit,
-          Path.join(root, fragment),
+          fragment,
           Path.join(out, "fragment"),
           modules
         ])
       end
 
-      if src = layer[:kernel_modules_src] do
-        kbuild = Path.join(out, "vendored")
-        File.rm_rf!(kbuild)
-        File.cp_r!(Path.join(root, src), kbuild)
+      vendored = Path.join(out, "vendored")
+      File.rm_rf!(vendored)
+
+      for {src, index} <- Enum.with_index(layer.kernel_modules_srcs) do
+        kbuild = Path.join(vendored, Integer.to_string(index))
+        File.cp_r!(Path.join(layer.root, src), kbuild)
         NervesLayer.script!("build-modules.sh", [devkit, kbuild, modules])
       end
 
@@ -67,27 +80,27 @@ defmodule Mix.Tasks.Compile.NervesLayer do
     end
   end
 
-  defp overlay_sources(root, layer) do
-    for name <- layer[:dt_overlays] || [],
-        source <- Path.wildcard(Path.join(root, "overlays/#{name}.{dtso,dts}")) |> Enum.take(1),
+  defp overlay_sources(layer) do
+    for name <- layer.dt_overlays,
+        source <-
+          Path.wildcard(Path.join(layer.root, "overlays/#{name}.{dtso,dts}")) |> Enum.take(1),
         do: source
   end
 
   # The dev kit pins the kernel, its sources and the toolchain, so the
   # layer's own files and the dev kit are all a build depends on.
-  defp stamp(root, layer, overlays, devkit) do
+  defp stamp(layer, overlays, devkit) do
     files =
-      [layer[:kernel_fragment], layer[:kernel_modules_src]]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.flat_map(&[Path.join(root, &1) | Path.wildcard(Path.join([root, &1, "**"]))])
+      (layer.kernel_fragments ++ layer.kernel_modules_srcs)
+      |> Enum.map(&Path.join(layer.root, &1))
+      |> Enum.flat_map(&[&1 | Path.wildcard(Path.join(&1, "**"))])
       |> Enum.concat(overlays)
       |> Enum.filter(&File.regular?/1)
       |> Enum.sort()
 
-    :crypto.hash(
-      :sha256,
-      :erlang.term_to_binary({devkit, Enum.map(files, &{&1, File.read!(&1)})})
-    )
+    inputs = {devkit, layer.kernel_fragments, Enum.map(files, &{&1, File.read!(&1)})}
+
+    :crypto.hash(:sha256, :erlang.term_to_binary(inputs))
     |> Base.encode16(case: :lower)
   end
 end

@@ -10,11 +10,7 @@ defmodule NervesLayerHifiberryDacplus.MixProject do
       compilers: Mix.compilers() ++ [:nerves_layer],
       deps: deps(),
       description: "HiFiBerry DAC+ support for stock Raspberry Pi Nerves systems",
-      nerves_layer: [
-        kernel_fragment: "linux.fragment",
-        dt_overlays: ["hifiberry-dacplus"],
-        config_txt: ["dtoverlay=hifiberry-dacplus"]
-      ]
+      nerves_layer: [NervesLayer.HifiberryDacplus.Layer]
     ]
   end
 

@@ -11,8 +11,8 @@ defmodule HelloLed.MixProject do
       compilers: Mix.compilers() ++ [:nerves_layer],
       deps: [{:nerves_layer, path: "../../../.."}],
       nerves_layer: [
-        dt_overlays: ["hello-led"],
-        config_txt: ["dtoverlay=hello-led"]
+        {NervesLayer.DeviceTree, overlays: ["hello-led"]},
+        {NervesLayer.RaspberryPi, dtoverlays: ["hello-led"]}
       ]
     ]
   end
