@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Checks that a built hello_layer .fw contains everything the DAC+ layer adds
-# at firmware build time, without booting it.
+# Checks that a built hello_layer .fw contains everything its layers add at
+# firmware build time, without booting it.
 #
 # Usage: scripts/verify-firmware.sh [path/to/hello_layer.fw]
 
@@ -33,6 +33,12 @@ config_writes=$(grep -c 'on-resource "config.txt"' "$WORK/meta.conf" || true)
 overlay_writes=$(grep -c "on-resource \"overlays/$OVERLAY.dtbo\"" "$WORK/meta.conf" || true)
 check "overlay written by every task that writes config.txt ($overlay_writes/$config_writes)" \
     "[[ $config_writes -gt 0 && $overlay_writes -eq $config_writes ]]"
+
+hello_writes=$(grep -c 'on-resource "overlays/hello-led.dtbo"' "$WORK/meta.conf" || true)
+check "hello-led overlay, compiled from source, written by every such task ($hello_writes/$config_writes)" \
+    "[[ $hello_writes -eq $config_writes ]]"
+check "config.txt enables hello-led" \
+    "unzip -p '$FW' data/config.txt | grep -qx 'dtoverlay=hello-led'"
 
 echo "Root filesystem"
 unzip -p "$FW" data/rootfs.img > "$WORK/rootfs.img"
